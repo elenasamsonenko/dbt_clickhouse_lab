@@ -1,263 +1,129 @@
-# DWH powered by Clickhouse and dbt
+## Втрое практическое занятие курса DWH Analyst
+# "DWH powered by Clickhouse and dbt"
 
-- Build DWH powered by [Clickhouse](https://clickhouse.com/) and [dbt](https://www.getdbt.com/)
-- Deploy Infrastructure as Code with [Terraform](https://www.terraform.io/) and [Yandex.Cloud](https://cloud.yandex.com/en-ru/)
-- Instant development with [Github Codespaces](https://docs.github.com/en/codespaces)
-- Assignment checks with [Github Actions](https://github.com/features/actions)
+### Цели:
+•  Создание хранилища данных на основе ClickHouse с использованием DBT.   
+•  Развёртывание инфраструктуры как кода с помощью Terraform на облачной платформе Yandex.Cloud.   
+•  Мгновенная разработка с помощью Github Codespaces.   
+•  Проверка заданий с использованием Github Actions.   
 
-## Lab plan
+## Data Build Tool (DBT)
+Data Build Tool (DBT) - это открытое программное обеспечение, предназначенное для автоматизации процесса разработки и управления данных в аналитических проектах. DBT представляет собой инструмент, который позволяет аналитикам и инженерам данных эффективно создавать, тестировать и поддерживать базы данных и пайплайны данных.
+Основная идея DBT заключается в том, что он позволяет создавать SQL-скрипты, которые определяют трансформации данных, а также автоматически генерируют соответствующие запросы к базе данных для выполнения этих трансформаций. Это позволяет разработчикам фокусироваться на логике бизнес-трансформаций данных, не заботясь о деталях выполнения запросов в базе данных.
 
-- [Fork this repository](https://docs.github.com/en/get-started/quickstart/fork-a-repo)
-- [Configure Developer Environment](#1-configure-developer-environment)
-    - Start with GitHub Codespaces
-    - Use devcontainer (locally)
-- [Deploy Infrastructure to Yandex.Cloud with Terraform](#2-deploy-infrastructure-to-yandexcloud-with-terraform)
-    - Get familiar with Yandex.Cloud web UI
-    - Configure `yc` CLI
-    - Populate `.env` file, Set environment variables
-    - Deploy using Terraform: Clickhouse
-- [Check database connection](#3-check-database-connection)
-    - Configure JDBC (DBeaver) connection
-    - Configure dbt connection
-- [Deploy DWH](#4-deploy-dwh)
-    - Install dbt packages
-    - Stage data sources with dbt macro
-    - Describe sources in [sources.yml](./models/sources/sources.yml) file
-    - Build staging models
-    - Prepare a data mart (wide table)
-- [Model read-optimized Data Mart](#5-model-read-optimized-data-mart)
-    - Turn SQL code into dbt model [f_orders_stats](./models/marts/f_orders_stats.sql)
-    - Open PR and trigger automated testing with Github Actions
-- [Delete cloud resources](#delete-cloud-resources)
+# 1.	Настройка среды разработчика
+В VS Code cоздаем локальную копию репозитория   
+```
+git clone https://github.com/kzzzr/dbt_clickhouse_lab.git
+```  
+После этого поднимаем контейнер для разработки с помощью инструмента DevContainer. Это позволяет создать изолированную среду разработки, которая содержит все необходимые зависимости и инструменты для работы над проектом.   
+```
+# build dev container
+devcontainer build .
 
-
-## 1. Configure Developer Environment
-
-
-You have got several options to set up:
- 
-<details><summary>Start with GitHub Codespaces</summary>
-<p>
-
-![GitHub Codespaces](./docs/github_codespaces.png)
-
-</p>
-</details>
-
-<details><summary>Use devcontainer (locally)</summary>
-<p>
-
-1. Install [Docker](https://docs.docker.com/desktop/#download-and-install) on your local machine.
-
-1. Install devcontainer CLI:
-
-    Open command palette (CMD + SHIFT+ P) type *Install devcontainer CLI*
-
-    ![](./docs/install_devcontainer_cli.png)
-
-1. Next build and open dev container:
-
-    ```bash
-    # build dev container
-    devcontainer build .
-
-    # open dev container
-    devcontainer open .
-    ```
-
-</p>
-</details>
-
-Verify you are in a development container by running commands:
-
-```bash
+# open dev container
+devcontainer open .
+```
+После успешного запуска контейнера рекомендуется войти в его среду выполнения, что позволяет осуществить проверку корректности установки необходимых инструментов. 
+```
+dbt –version
 terraform -v
-
 yc --version
+``` 
 
-dbt --version
-```
-
-If any of these commands fails printing out used software version then you are probably running it on your local machine not in a dev container!
-
-## 2. Deploy Infrastructure to Yandex.Cloud with Terraform
-
-1. Get familiar with Yandex.Cloud web UI
-
-    We will deploy:
-    - [Yandex Managed Service for ClickHouse](https://cloud.yandex.com/en/services/managed-clickhouse)
-    
-    ![](./docs/clickhouse_management_console.gif)
-
-1. Configure `yc` CLI: [Getting started with the command-line interface by Yandex Cloud](https://cloud.yandex.com/en/docs/cli/quickstart#install)
-
-    ```bash
-    yc init
-    ```
-
-1. Populate `.env` file
-
-    `.env` is used to store secrets as environment variables.
-
-    Copy template file [.env.template](./.env.template) to `.env` file:
-    ```bash
-    cp .env.template .env
-    ```
-
-    Open file in editor and set your own values.
-
-    > ❗️ Never commit secrets to git    
-
-
-1. Set environment variables:
-
-    ```bash
-    export YC_TOKEN=$(yc iam create-token)
-    export YC_CLOUD_ID=$(yc config get cloud-id)
-    export YC_FOLDER_ID=$(yc config get folder-id)
-    export $(xargs <.env)
-    ```
-
-1. Deploy using Terraform
-
-    Configure YC Terraform provider:
-    
-    ```bash
-    cp terraformrc ~/.terraformrc
-    ```
-
-    Get familiar with Cloud Infrastructure: [main.tf](./main.tf) and [variables.tf](./variables.tf)
-
-    ```bash
-    terraform init
-    terraform validate
-    terraform fmt
-    terraform plan
-    terraform apply
-    ```
-
-    Store terraform output values as Environment Variables:
-
-    ```bash
-    export CLICKHOUSE_HOST=$(terraform output -raw clickhouse_host_fqdn)
-    export DBT_HOST=${CLICKHOUSE_HOST}
-    export DBT_USER=${CLICKHOUSE_USER}
-    export DBT_PASSWORD=${TF_VAR_clickhouse_password}
-    ```
-
-    [EN] Reference: [Getting started with Terraform by Yandex Cloud](https://cloud.yandex.com/en/docs/tutorials/infrastructure-management/terraform-quickstart)
-    
-    [RU] Reference: [Начало работы с Terraform by Yandex Cloud](https://cloud.yandex.ru/docs/tutorials/infrastructure-management/terraform-quickstart)
-
-## 3. Check database connection
-
-[Configure JDBC (DBeaver) connection](https://cloud.yandex.ru/docs/managed-clickhouse/operations/connect#connection-ide):
+Однако, при проверке версии dbt возникла ошибка, связанная с несовместимостью версий. Для решения этой проблемы было необходимо обновить версию пакета protobuf до значения не менее 3.19.0
 
 ```
-port=8443
-socket_timeout=300000
-ssl=true
-sslrootcrt=<path_to_cert>
+ pip install protobuf>=3.19.0
 ```
+![изображение](https://github.com/elenasamsonenko/dbt_clickhouse_lab/assets/129121912/d189454e-9167-4633-82ff-b04633aaa7cc)
 
-![DBeaver + Clickhouse](./docs/clickhouse_dbeaver.png)
+Далее копируем содержимое файла .env.template в новый файл с именем .env. Данный файл содержи т логин и пароль, который необходимо изменить на новый
+```  
+cp .env.template .env
 
-Make sure dbt can connect to your target database:
+```
+# 2. Развертывание инфраструктуры в Yandex.Cloud с помощью Terraform.
+Инициализация рабочего окружения для работы с облачной платформой Yandex.Cloud 
+```
+yc init
+```  
+Устанавливаем несколько переменных окружения. Эти переменные могут использоваться в дальнейшем для аутентификации и настройки доступа к ресурсам Yandex.Cloud в рамках выполнения команд и скриптов.
+```  
+export YC_TOKEN=$(yc iam create-token)
+export YC_CLOUD_ID=$(yc config get cloud-id)
+export YC_FOLDER_ID=$(yc config get folder-id)
+export $(xargs <.env)
+```
+Проверяем переменные окружения
+```  
+env | grep clickhouse
+```
+Инициализация Terraform
+```  
+terraform init
+terraform validate
+terraform fmt
+terraform plan
+terraform apply
+```
+При инициализации Terraform возникает ошибка, связанная с недействительным хостом реестра провайдеров.    
+Создаем файл конфигурации terraformrc в рабочей директории, используя команду cp terraformrc ~/.terraformrc.     
+Этот файл будет содержать настройки для установки провайдеров Terraform.   
+Terraform has been successfully initialized!   
 
-```bash
+В результате успешно создан ClickHouse кластер
+Сохранение значений вывода Terraform в виде переменных среды
+```
+export CLICKHOUSE_HOST=$(terraform output -raw clickhouse_host_fqdn)
+export DBT_HOST=${CLICKHOUSE_HOST}
+export DBT_USER=${CLICKHOUSE_USER}
+export DBT_PASSWORD=${TF_VAR_clickhouse_password}
+```
+# 3. Подключение подключение к Clickhouse с помощью Dbeaver
+Настраиваем подключение к Clickhouse через Dbeaver.   
+DBeaver - это универсальный инструмент для управления базами данных, который поддерживает множество СУБД.    
+Перед подключение необходимо получить SSL-сертификат (https://cloud.yandex.ru/ru/docs/managed-clickhouse/operations/connect#linux_1) и указать путь к сертификату в настройках базового подключения     
+![изображение](https://github.com/elenasamsonenko/dbt_clickhouse_lab/assets/129121912/03c2b990-2933-4a9d-8e55-fdb56a76934c)    
+![изображение](https://github.com/elenasamsonenko/dbt_clickhouse_lab/assets/129121912/e2c58a5f-2f79-49ed-9188-5c0eccf8e1d1)
+
+Делаем "отладочный" запуска проекта dbt   
+```
 dbt debug
 ```
+![изображение](https://github.com/elenasamsonenko/dbt_clickhouse_lab/assets/129121912/f622dc2c-5c92-4888-a831-325b437e1bc6)
 
-![dbt + Clickhouse connection](./docs/dbt_debug.png)
-
-If any errors check ENV values are present:
-
-```bash
-env | grep DBT_
+# 4. Развертывание Хранилище данных
+1. Устанавливаем необходимые пакеты для корректной работы проекта dbt. Обращаемся к  файлу packages.yml, который содержит список пакетов и их версий,
 ```
-
-## 4. Deploy DWH
-
-1. Install dbt packages
-
-    ```bash
-    dbt deps
-    ```
-
-1. Stage data sources with dbt macro
-
-    Source data will be staged as EXTERNAL TABLES (S3) using dbt macro [init_s3_sources](./macros/init_s3_sources.sql):
-
-    ```bash
-    dbt run-operation init_s3_sources
-    ```
-
-    Statements will be executed one by one to avoid error:
-
-    ```
-    DB::Exception: Syntax error (Multi-statements are not allowed)
-    ```
-
-1. Describe sources in [sources.yml](./models/sources/sources.yml) file
-
-1. Build staging models:
-
-    ```bash
-    dbt build -s tag:staging
-    ```
-
-    Check model configurations: `engine`, `order_by`, `partition_by`
-
-1. Prepare a data mart (wide table)
-
-    Join all the tables into one [f_lineorder_flat](./models/marts/f_lineorder_flat.sql):
-
-    ```bash
-    dbt build -s f_lineorder_flat
-    ```
-
-    Pay attentions to models being tested for keys being unique, not null.
-
-## 5. Model read-optimized Data Mart
-
-Turn the following SQL into dbt model [f_orders_stats](./models/marts/f_orders_stats.sql):
-
-```sql
-SELECT
-    toYear(O_ORDERDATE) AS O_ORDERYEAR
-    , O_ORDERSTATUS
-    , O_ORDERPRIORITY
-    , count(DISTINCT O_ORDERKEY) AS num_orders
-    , count(DISTINCT C_CUSTKEY) AS num_customers
-    , sum(L_EXTENDEDPRICE * L_DISCOUNT) AS revenue
-FROM -- PLEASE USE dbt's ref('') to ensure valid DAG execution!
-WHERE 1=1
-GROUP BY
-    toYear(O_ORDERDATE)
-    , O_ORDERSTATUS
-    , O_ORDERPRIORITY
+dbt deps
 ```
-
-Make sure the tests pass:
-
-```bash
-dbt build -s f_orders_stats
+2.	Загрузка данных из S3 в Clickhouse с помощью макросов dbt
 ```
-
-![](./docs/f_orders_stats.png)
-
-## 6. Create PR and make CI tests pass
-
-If it works from your terminal, commit, open PR and trigger automated testing with Github Actions
-
-![Github Actions check passed](./docs/github_checks_passed.png)
-
-## Delete cloud resources
-
-⚠️ Attention! Always delete cloud resources after you finished!
-
-![image](https://user-images.githubusercontent.com/34193409/214896888-3c6db293-8f1c-4931-8277-b2e4137f30a3.png)
-
-```bash
-terraform destroy
+dbt run-operation init_s3_sources
 ```
+3.	Прописываем данные об источнике в файле  sources.yml
+4.	Построение моделей стейджинга (предварительной подготовки данных) для загрузки в слой marts
+```
+dbt build -s tag:staging
+```
+5.	Создаем витрину данных
+```
+dbt build -s f_lineorder_flat
+```
+6.	Создание dbt модели с именем f_orders_stats. Для этого необходимо ны создать SQL файл с названием f_orders_stats.sql и поместить его в каталог models dbt проекта.   
+![image](https://github.com/elenasamsonenko/dbt_clickhouse_lab/assets/129121912/7854818d-a240-4aab-8ca5-da7bed874502)
+
+# Результаты
+1.	Настройка среды разработки: Установлены и настроены необходимые инструменты для работы с проектом, такие как dbt, GitHub и Terraform.
+2.	Настройка подключения к Clickhouse через DBeaver: Получен SSL-сертификат и настроены параметры подключения к Clickhouse через DBeaver.
+3.	Настройка переменных окружения для Terraform: Экспортированы значения вывода Terraform как переменные окружения для дальнейшего использования.
+4.	Создание модели dbt для статистики заказов: Создана модель f_orders_stats, предназначенная для анализа статистики заказов, включающая в себя информацию о количестве заказов, клиентов и общей выручке.
+5.	Создание Pull Request и прохождение CI тестов: Создан Pull Request с новой моделью f_orders_stats, который был протестирован с использованием GitHub Actions для проверки работоспособности изменений и автоматической сборки проекта.
+6.	Работа с файлом marts.yml: Добавлена информация о новой модели f_orders_stats в файл marts.yml, чтобы описать её роль в структуре данных проекта dbt.   
+Итоги практического занятия включают в себя успешное выполнение всех задач, настройку среды разработки, создание и тестирование новой модели данных, а также улучшение процесса разработки с помощью использования инструментов управления версиями и автоматизации тестирования.
+
+
+
+
+
